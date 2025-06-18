@@ -1,0 +1,177 @@
+#install and configure nginx and php-fpm
+
+sudo apt install nginx -y & sudo apt-get install php8.3-fpm
+sudo nano /etc/nginx/sites-available/dnslook.online
+-------------------------------------------------------
+server {
+    server_name _;  # Aici specifici domeniul tău!
+    root /var/www/html;  # Calea către directorul tău web
+
+    index index.html index.php index.htm;
+
+    location / {
+       # try_files $uri $uri/ /index.php?$query_string;
+        try_files $uri $uri/ =404;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php8.3-fpm.sock;  # Folosește socket-ul Unix
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+}
+---------------------------------------------------------------
+sudo ln -s /etc/nginx/sites-available/dnslook.online /etc/nginx/sites-enabled/
+
+
+
+
+
+
+
+
+
+
+
+
+wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo gpg --dearmor -o /usr/share/keyrings/elasticsearch-keyring.gpg
+
+sudo apt-get install apt-transport-https
+echo "deb [signed-by=/usr/share/keyrings/elasticsearch-keyring.gpg] https://artifacts.elastic.co/packages/9.x/apt stable main" | sudo tee /etc/apt/sources.list.d/elastic-9.x.list
+sudo apt-get update && sudo apt-get install elasticsearch
+---------------------------
+elastic iBQ0NI2gUoY6rZchs23w
+---------------------------
+sudo nano /etc/elasticsearch/elasticsearch.yml
+---------------------------------------------------
+network.host: 0.0.0.0
+http.port: 9200
+discovery.seed_hosts: ["127.0.0.1"]
+xpack.security.enabled: false
+sudo systemctl start elasticsearch.service
+sudo systemctl enable elasticsearch.service
+curl 127.0.0.1:9200
+---------------------------------------------------
+
+sudo apt install kibana
+sudo nano /etc/kibana/kibana.yml
+---------------------------------------------------
+server.port: 5601
+server.host: "0.0.0.0"
+---------------------------------------------------
+sudo systemctl start kibana.service
+sudo systemctl enable kibana.service
+sudo apt install logstash
+sudo systemctl start logstash.service
+sudo systemctl enable logstash.service
+
+----------------------------------
+sudo apt install filebeat
+sudo nano /etc/filebeat/filebeat.yml
+-------------------------------------
+#output.elasticsearch:
+  # Array of hosts to connect to.
+#  hosts: ["192.168.1.101:9200"]
+output.logstash:
+  # The Logstash hosts
+  hosts: ["192.168.1.101:5044"]
+(specify elk address output)
+--------------------------------------
+sudo filebeat modules enable nginx
+sudo systemctl restart filebeat
+sudo nano /etc/filebeat/modules.d/nginx.yml
+--------------------------------------------
+- module: nginx
+  access:
+    enabled: true
+    var.paths: ["/var/log/nginx/access.log*"]  # Calea corectă pentru log-urile tale
+  error:
+    enabled: true
+    var.paths: ["/var/log/nginx/error.log*"]   # Calea corectă pentru log-urile tale
+----------------------------------------------------------------------------------------
+#sudo filebeat setup --index-management -E output.elasticsearch.hosts=['192.168.1.101:9200']
+#sudo filebeat setup -E output.elasticsearch.hosts=['192.168.1.101:9200'] -E #setup.kibana.host=192.168.1.101:5601
+
+----------------------------------------------------------------------------------------
+sudo nano /etc/logstash/conf.d/nginx.conf
+------------------------------
+input {
+  beats {
+    host => "0.0.0.0"
+    port => 5044
+  }
+}
+filter {
+  if [type] == "nginx" {
+    grok {
+      match => {
+        "message" => '%{IPORHOST:clientip} %{USER:ident} %{USER:auth} \[%{HTTPDATE:timestamp}\] "%{WORD:method} %{URIPATHPARAM:request} HTTP/%{NUMBER:httpversion}" %{NUMBER:response} (?:%{NUMBER:bytes}|-)'
+      }
+    }
+    date {
+      match => [ "timestamp", "dd/MMM/yyyy:HH:mm:ss Z" ]
+      target => "@timestamp"
+    }
+    mutate {
+      remove_field => ["timestamp", "message"]
+    }
+  }
+}
+output {
+  elasticsearch {
+      hosts => ["127.0.0.1:9200"]
+      index => "elk_fb_logstash-%{+YYYY.MM.dd}"
+  }
+}
+
+
+-------------------------------------------------------------------------------
+configure security for ELK stack:
+-------------------------------------------------------------------------------
+sudo nano /etc/elasticsearch/elasticsearch.yml
+------------------------------------------------
+xpack.security.enabled: true
+
+xpack.security.transport.ssl:
+  enabled: false
+--------------------------------------------------
+sudo /usr/share/elasticsearch/bin/elasticsearch-reset-password -u elastic
+iupD4lp4s8g6rSFLwik*
+
+sudo /usr/share/elasticsearch/bin/elasticsearch-reset-password -u kibana_system
+*k36KCS4sRjaegmPGdI-
+
+sudo /usr/share/elasticsearch/bin/elasticsearch-reset-password -u logstash_system
+sfufOgir7f2oDEC7dwJw
+
+-----------------------------------------------------
+sudo nano /etc/kibana/kibana.yml
+-----------------------------------------------------
+elasticsearch.username: "kibana_system"
+elasticsearch.password: "*k36KCS4sRjaegmPGdI-"
+-----------------------------------------------------
+sudo nano /etc/logstash/conf.d/nginx.conf
+-----------------------------------------------------
+output {
+  elasticsearch {
+      hosts => ["127.0.0.1:9200"]
+      index => "elk_fb_logstash-%{+YYYY.MM.dd}"
+      user => "logstash_system"                # Utilizatorul creat în Elasticsearch
+      password => "sfufOgir7f2oDEC7dwJw"
+  }
+}
+-----------------------------------------------------
+
+
+
+
+
+
+
+
+
